@@ -115,6 +115,8 @@ private:
 
     void writeInode(size_t index, const string &src);
 
+    int writeBlocks(const string &src, uint32_t *begin, const uint32_t *end, int srcOffset);
+
     void initDirectory(size_t index, size_t parent);
 
     size_t locateFile(const string &path);
@@ -147,6 +149,7 @@ public:
     explicit FileSystem(Disk &disk);
 
     ~FileSystem();
+
 };
 
 #endif // _FS_H

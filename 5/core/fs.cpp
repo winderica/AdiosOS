@@ -223,17 +223,34 @@ string FileSystem::readInode(size_t index) {
 }
 
 void FileSystem::writeInode(size_t index, const string &src) { // TODO: offset?
-    auto BLOCK_SIZE = Disk::BLOCK_SIZE;
     checkInode(index, true);
-
-    if (src.length() >= (DIRECT_BLOCKS_PER_INODE + INDIRECT_BLOCKS_PER_INODE) * BLOCK_SIZE) {
+    if (src.length() >= (DIRECT_BLOCKS_PER_INODE + INDIRECT_BLOCKS_PER_INODE) * Disk::BLOCK_SIZE) {
         throw runtime_error("Source size exceeds capability of BFS");
     }
     auto inode = getInode(index);
-    auto srcOffset = 0;
-    for (auto i = begin(inode.direct);
-         i != end(inode.direct) && srcOffset < src.length();
-         i++, srcOffset += BLOCK_SIZE) { // TODO: refactor this
+    auto srcOffset = writeBlocks(src, begin(inode.direct), end(inode.direct), 0);
+    if (srcOffset < src.length()) {
+        Block pointerBlock{};
+        if (inode.indirect == 0) {
+            auto indirectMapIndex = blockMap._Find_first();
+            checkBlock(indirectMapIndex);
+            auto indirectLocation = getBlockLocation(indirectMapIndex);
+            setBlockMap(indirectMapIndex, false);
+            inode.indirect = indirectLocation;
+        } else {
+            disk.read(inode.indirect, pointerBlock.data);
+        }
+        writeBlocks(src, begin(pointerBlock.pointers), end(pointerBlock.pointers), srcOffset);
+        disk.write(inode.indirect, pointerBlock.data);
+    }
+    inode.size = src.length();
+    inode.modification_time = getTime();
+    setInode(index, inode);
+}
+
+int FileSystem::writeBlocks(const string &src, uint32_t *begin, const uint32_t *end, int srcOffset) {
+    auto BLOCK_SIZE = Disk::BLOCK_SIZE;
+    for (auto i = begin; i != end && srcOffset < src.length(); i++, srcOffset += BLOCK_SIZE) {
         auto length = min(BLOCK_SIZE, src.length() - srcOffset);
         Block dataBlock{};
         if (*i == 0) {
@@ -248,39 +265,7 @@ void FileSystem::writeInode(size_t index, const string &src) { // TODO: offset?
         newData.replace(0, length, src, srcOffset, length);
         disk.write(*i, newData.data());
     }
-    if (srcOffset < src.length()) {
-        Block pointerBlock{};
-        if (inode.indirect == 0) {
-            auto indirectMapIndex = blockMap._Find_first();
-            checkBlock(indirectMapIndex);
-            auto indirectLocation = getBlockLocation(indirectMapIndex);
-            setBlockMap(indirectMapIndex, false);
-            inode.indirect = indirectLocation;
-        } else {
-            disk.read(inode.indirect, pointerBlock.data);
-        }
-        for (auto i = begin(pointerBlock.pointers);
-             i != end(pointerBlock.pointers) && srcOffset < src.length();
-             i++, srcOffset += BLOCK_SIZE) {
-            auto length = min(BLOCK_SIZE, src.length() - srcOffset);
-            Block dataBlock{};
-            if (*i == 0) {
-                auto mapIndex = blockMap._Find_first();
-                checkBlock(mapIndex);
-                *i = getBlockLocation(mapIndex);
-                setBlockMap(mapIndex, false);
-            } else {
-                disk.read(*i, dataBlock.data);
-            }
-            auto newData = string(dataBlock.data, BLOCK_SIZE);
-            newData.replace(0, length, src, srcOffset, length);
-            disk.write(*i, newData.data());
-        }
-        disk.write(inode.indirect, pointerBlock.data);
-    }
-    inode.size = src.length();
-    inode.modification_time = getTime();
-    setInode(index, inode);
+    return srcOffset;
 }
 
 size_t FileSystem::locateFile(const string &path) {
@@ -320,7 +305,7 @@ size_t FileSystem::locateParent(const string &path) {
 }
 
 void FileSystem::createFile(const string &path) {
-    if (path == "/") { // TODO: test /../, /.. etc.
+    if (path == "/") {
         throw runtime_error("Root directory has already been created");
     }
     auto isDirectory = path[path.size() - 1] == '/';
@@ -344,7 +329,8 @@ void FileSystem::createFile(const string &path) {
         }
     }
     auto &newEntry = temp.entries[inode.size / DIRECTORY_ENTRY_SIZE];
-    strncpy(newEntry.filename, filename.c_str(), filename.length());
+    // std::copy is a more C++ way than str(n)cpy
+    copy(filename.begin(), filename.end(), newEntry.filename);
     newEntry.inode = createInode(isDirectory ? 01644 : 0644);
     if (isDirectory) {
         initDirectory(newEntry.inode, index);
@@ -368,7 +354,8 @@ void FileSystem::removeFile(const string &path) {
     temp.data = parentData.data();
     for (int i = 0; i < parentInode.size / DIRECTORY_ENTRY_SIZE; i++) {
         if (temp.entries[i].inode == index) {
-            memcpy(&temp.entries[i], &temp.entries[parentInode.size / DIRECTORY_ENTRY_SIZE - 1], DIRECTORY_ENTRY_SIZE);
+            copy(&temp.entries[i + 1], &temp.entries[parentInode.size / DIRECTORY_ENTRY_SIZE], &temp.entries[i]);
+            break;
         }
     }
     writeInode(parent, string(temp.data, parentInode.size - DIRECTORY_ENTRY_SIZE)); // update parent entry
@@ -422,8 +409,8 @@ void FileSystem::moveFile(const string &from, const string &to) {
     removeFile(from);
 }
 
-void FileSystem::changeDirectory(const string &path) { // TODO: cd
-
+void FileSystem::changeDirectory(const string &path) {
+    currentInodeIndex = locateFile(path[path.length() - 1] == '/' ? path : path + '/');
 }
 
 vector<pair<string, FileSystem::InodeBase>> FileSystem::listDirectory(const string &path) {
@@ -432,10 +419,7 @@ vector<pair<string, FileSystem::InodeBase>> FileSystem::listDirectory(const stri
     if (path.empty()) {
         data = readInode(currentInodeIndex);
     } else {
-        if (path[path.size() - 1] != '/') {
-            throw runtime_error("'/' should be appended to the path");
-        }
-        data = readInode(locateFile(path));
+        data = readInode(locateFile(path[path.length() - 1] == '/' ? path : path + '/'));
     }
     auto entries = reinterpret_cast<DirectoryEntry *>(data.data());
     for (auto i = 0; i < data.size() / DIRECTORY_ENTRY_SIZE; i++) {

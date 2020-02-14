@@ -115,6 +115,11 @@ int main(int argc, char *argv[]) {
             for (const auto &[filename, inode]: fs.listDirectory(arg1))
                 printStat(filename, inode);
         }},
+        {"cd",     [&fs](const string &arg1, const string &) {
+            if (arg1.empty())
+                throw runtime_error("Usage: cd <directory>");
+            fs.changeDirectory(arg1);
+        }},
         {"stat",   [&fs](const string &arg1, const string &) {
             if (arg1.empty())
                 throw runtime_error("Usage: stat <file>");
