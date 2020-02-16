@@ -299,7 +299,7 @@ size_t FileSystem::locateParent(const string &path) {
     auto parentPath = path[path.size() - 1] == '/' ? path.substr(0, path.size() - 1) : path;
     auto lastSlash = parentPath.find_last_of('/');
     if (lastSlash == string::npos) {
-        return locateFile("/");
+        return currentInodeIndex;
     }
     return locateFile(parentPath.substr(0, lastSlash) + "/");
 }
