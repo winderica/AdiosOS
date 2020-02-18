@@ -5,16 +5,14 @@
 #include <vector>
 #include <map>
 #include <unordered_map>
-#include <sys/types.h>
-#include <sys/sysinfo.h>
 
 using namespace std;
 using namespace chrono;
 
 class Monitor {
+public:
     using ull = unsigned long long;
     using is_iter = istreambuf_iterator<char>;
-
     struct CPUInfo {
         string vendorId;
         string modelName;
@@ -75,7 +73,16 @@ class Monitor {
         time_point<system_clock> bootTime;
     };
 
-    unordered_map<ull, string> user; // uid -> username
+    struct ModuleInfo {
+        string name;
+        ull memorySize;
+        ull instanceCount;
+        string dependencies;
+        string state;
+    };
+private:
+    unordered_map<ull, string> users; // uid -> username
+    vector<ModuleInfo> modules;
     Usage usage;
     CPUInfo cpuInfo;
     string version;
@@ -89,11 +96,13 @@ class Monitor {
 
     void readCPUInfo();
 
+    void readModules();
+
     static pair<double, double> readUpTime();
 
     static vector<string> split(const string &str, const string &delimiter);
 
-    inline ull parseLine(const string &data);
+    static inline ull parseLine(const string &data);
 
 public:
     Monitor();
@@ -112,6 +121,7 @@ public:
 
     TimeInfo getCPUTime();
 
+    vector<ModuleInfo> getModules();
 };
 
 #endif // _MONITOR_H

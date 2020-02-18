@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.16)
 
 project(AdiosOS)
 
@@ -16,7 +16,7 @@ add_library(copy_syscall OBJECT 2/copy.c)
 add_library(copy_test OBJECT 2/test.c)
 add_executable(lkm 3/lkm.c)
 add_executable(lkm_test 3/test.c)
-add_executable(itop 4/main.cpp 4/core/monitor.cpp 4/utils/utils.cpp 4/components/mainWindow.cpp)
+add_executable(itop 4/main.cpp 4/core/monitor.cpp 4/utils/utils.cpp 4/components/mainWindow.cpp 4/components/performanceTab.cpp 4/components/systemTab.cpp 4/components/processTab.cpp 4/components/aboutTab.cpp 4/components/moduleTab.cpp)
 add_executable(bfs 5/main.cpp 5/core/disk.cpp 5/core/fs.cpp 5/utils/utils.cpp)
 
 target_link_libraries(concurrency Qt5::Widgets)

@@ -40,24 +40,24 @@ Monitor::ull Monitor::parseLine(const string &data) {
 
 void Monitor::readJiffies() {
     ifstream cpuUsage("/proc/stat");
-    string line;
-    getline(cpuUsage, line);
-    auto values = split(line, " ");
-    usage.currentJiffies.user = stoull(values[1]);
-    usage.currentJiffies.nice = stoull(values[2]);
-    usage.currentJiffies.system = stoull(values[3]);
-    usage.currentJiffies.idle = stoull(values[4]);
-    usage.currentJiffies.iowait = stoull(values[5]);
-    usage.currentJiffies.irq = stoull(values[6]);
-    usage.currentJiffies.softirq = stoull(values[7]);
+    string tmp, user, nice, system, idle, ioWait, irq, softIrq;
+    cpuUsage >> tmp >> user >> nice >> system >> idle >> ioWait >> irq >> softIrq;
+    usage.currentJiffies = {
+        stoull(user),
+        stoull(nice),
+        stoull(system),
+        stoull(idle),
+        stoull(ioWait),
+        stoull(irq),
+        stoull(softIrq),
+    };
 }
 
 pair<double, double> Monitor::readUpTime() {
-    ifstream uptime("/proc/uptime");
-    string line;
-    getline(uptime, line);
-    auto values = split(line, " ");
-    return {stod(values[0]), stod(values[1])};
+    ifstream ifs("/proc/uptime");
+    string upTime, idleTime;
+    ifs >> upTime >> idleTime;
+    return {stod(upTime), stod(idleTime)};
 }
 
 string Monitor::getVersion() {
@@ -66,7 +66,7 @@ string Monitor::getVersion() {
 
 void Monitor::readVersion() {
     ifstream ifs("/proc/version");
-    version = string(is_iter(ifs), is_iter());
+    getline(ifs, version);
 }
 
 Monitor::CPUInfo Monitor::getCPUInfo() {
@@ -104,18 +104,32 @@ void Monitor::readCPUInfo() {
 }
 
 Monitor::MemoryInfo Monitor::getMemoryInfo() {
-    struct sysinfo memInfo{};
-    sysinfo(&memInfo);
-    auto unit = memInfo.mem_unit;
-    ull totalPhysical = memInfo.totalram;
-    ull usedPhysical = totalPhysical - memInfo.freeram;
-    ull totalVirtual = totalPhysical + memInfo.totalswap;
-    ull usedVirtual = totalVirtual - memInfo.freeram - memInfo.freeswap;
+    ifstream ifs("/proc/meminfo");
+    string line;
+    ull totalRAM;
+    ull freeRAM;
+    ull totalSwap;
+    ull freeSwap;
+    while (getline(ifs, line)) {
+        if (line.substr(0, 8) == "MemTotal") {
+            totalRAM = parseLine(line) * 1000;
+        } else if (line.substr(0, 7) == "MemFree") {
+            freeRAM = parseLine(line) * 1000;
+        } else if (line.substr(0, 9) == "SwapTotal") {
+            totalSwap = parseLine(line) * 1000;
+        } else if (line.substr(0, 8) == "SwapFree") {
+            freeSwap = parseLine(line) * 1000;
+        }
+    }
+    ull totalPhysical = totalRAM;
+    ull usedPhysical = totalPhysical - freeRAM;
+    ull totalVirtual = totalPhysical + totalSwap;
+    ull usedVirtual = totalVirtual - freeRAM - freeSwap;
     return {
-        totalVirtual * unit,
-        usedVirtual * unit,
-        totalPhysical * unit,
-        usedPhysical * unit
+        totalVirtual,
+        usedVirtual,
+        totalPhysical,
+        usedPhysical
     };
 }
 
@@ -191,11 +205,11 @@ Monitor::Usage Monitor::getUsage() {
                 }
             }
             process.memoryUsage = (double) process.physicalMemory / getMemoryInfo().totalPhysical;
-            if (!user.count(process.uid)) {
+            if (!users.count(process.uid)) {
                 auto pw = getpwuid(process.uid);
-                user[process.uid] = string(pw->pw_name);
+                users[process.uid] = string(pw->pw_name);
             }
-            process.user = user[process.uid];
+            process.user = users[process.uid];
             usage.processes[process.pid] = process;
         }
     }
@@ -217,17 +231,51 @@ Monitor::TimeInfo Monitor::getCPUTime() {
 
 void Monitor::readHostname() {
     ifstream ifs("/proc/sys/kernel/hostname");
-    hostname = string(is_iter(ifs), is_iter());
+    getline(ifs, hostname);
 }
 
 string Monitor::getHostname() {
     return hostname;
 }
 
+void Monitor::readModules() {
+    ifstream ifs("/proc/modules");
+//    stringstream ifs(R"(veth 20480 0 - Live 0xffffffffc0695000
+//xt_conntrack 16384 1 - Live 0xffffffffc0690000
+//ipt_MASQUERADE 16384 1 - Live 0xffffffffc068b000
+//nf_conntrack_netlink 49152 0 - Live 0xffffffffc0679000
+//xfrm_user 40960 1 - Live 0xffffffffc066a000
+//xfrm_algo 16384 1 xfrm_user, Live 0xffffffffc0651000
+//)"); // just some fake data for test
+    string line;
+    while (getline(ifs, line)) {
+        stringstream ss(line);
+        string name, memorySize, instanceCount, dependencies, state;
+        ss >> name >> memorySize >> instanceCount >> dependencies >> state;
+        if (name.empty() || memorySize.empty() || instanceCount.empty() || dependencies.empty() || state.empty()) {
+            continue;
+        }
+        modules.push_back(
+            {
+                name,
+                stoull(memorySize),
+                stoull(instanceCount),
+                dependencies,
+                state
+            }
+        );
+    }
+}
+
+vector<Monitor::ModuleInfo> Monitor::getModules() {
+    return modules;
+}
+
 Monitor::Monitor() {
     readCPUInfo();
     readVersion();
     readHostname();
+    readModules();
 }
 
 Monitor::~Monitor() = default;
