@@ -460,4 +460,8 @@ vector<string> FileSystem::split(const string &str, const string &delimiter) {
     return tokens;
 }
 
-FileSystem::~FileSystem() = default;
+FileSystem::~FileSystem() {
+    if (disk.mounted()) {
+        disk.unmount();
+    }
+}

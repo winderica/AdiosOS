@@ -14,7 +14,7 @@ int main() {
         perror("Failed to open the device");
         return errno;
     }
-    printf("Type in a short string to send to the kernel module:\n");
+    printf("Please type your message to the kernel module:\n");
     scanf("%[^\n]%*c", message);
     if (write(fd, message, strlen(message)) < 0) {
         perror("Failed to write the message to the device");

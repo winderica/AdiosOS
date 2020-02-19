@@ -40,9 +40,9 @@ void load(FileSystem &fs, const string &path, const string &filename) {
 }
 
 void printStat(const string &filename, FileSystem::InodeBase inode) {
-    cout << Utils::formatSize(inode.size).rdbuf() << " "
-         << oct << inode.mode << " "
-         << dec << inode.uid << " "
+    cout << setw(5) << Utils::formatSize(inode.size).str()
+         << oct << setw(5) << inode.mode
+         << dec << setw(5) << inode.uid << " "
          << Utils::formatTimePoint(inode.create_time) << " "
          << Utils::formatTimePoint(inode.modification_time) << " "
          << filename << endl;
@@ -76,82 +76,83 @@ int main(int argc, char *argv[]) {
     Disk disk(argv[1]);
     FileSystem fs(disk);
 
+    // map of functions is much more elegant than if-else/switch-case
     map<string, function<void(const string &, const string &)>> funcs = {
-        {"format", [&fs](const string &, const string &) {
+        {"format",  [&fs](const string &, const string &) {
             fs.format();
         }},
-        {"mount",  [&fs](const string &, const string &) {
+        {"mount",   [&fs](const string &, const string &) {
             fs.mount();
         }},
-        {"cat",    [&fs](const string &arg1, const string &) {
+        {"cat",     [&fs](const string &arg1, const string &) {
             if (arg1.empty())
                 throw runtime_error("Usage: cat <file>");
             store(fs, arg1, "/dev/stdout");
             cout << endl;
         }},
-        {"store",  [&fs](const string &arg1, const string &arg2) {
+        {"store",   [&fs](const string &arg1, const string &arg2) {
             if (arg1.empty() || arg2.empty())
                 throw runtime_error("Usage: store <file> <file_outside_bfs>");
             store(fs, arg1, arg2);
         }},
-        {"load",   [&fs](const string &arg1, const string &arg2) {
+        {"load",    [&fs](const string &arg1, const string &arg2) {
             if (arg1.empty() || arg2.empty())
                 throw runtime_error("Usage: load <file_outside_bfs> <file>");
             load(fs, arg1, arg2);
         }},
-        {"touch",  [&fs](const string &arg1, const string &) {
+        {"touch",   [&fs](const string &arg1, const string &) {
             if (arg1.empty())
                 throw runtime_error("Usage: touch <file>");
             if (arg1[arg1.length() - 1] == '/')
                 throw runtime_error("Touching directory is not allowed. Please use mkdir instead");
             fs.createFile(arg1);
         }},
-        {"mkdir",  [&fs](const string &arg1, const string &) {
+        {"mkdir",   [&fs](const string &arg1, const string &) {
             if (arg1.empty())
                 throw runtime_error("Usage: mkdir <directory>");
             fs.createFile(arg1[arg1.length() - 1] == '/' ? arg1 : arg1 + '/');
         }},
-        {"ls",     [&fs](const string &arg1, const string &) {
+        {"ls",      [&fs](const string &arg1, const string &) {
             for (const auto &[filename, inode]: fs.listDirectory(arg1))
                 printStat(filename, inode);
         }},
-        {"cd",     [&fs](const string &arg1, const string &) {
+        {"cd",      [&fs](const string &arg1, const string &) {
             if (arg1.empty())
                 throw runtime_error("Usage: cd <directory>");
             fs.changeDirectory(arg1);
         }},
-        {"stat",   [&fs](const string &arg1, const string &) {
+        {"stat",    [&fs](const string &arg1, const string &) {
             if (arg1.empty())
                 throw runtime_error("Usage: stat <file>");
             printStat(arg1, fs.statFile(arg1));
         }},
-        {"rm",     [&fs](const string &arg1, const string &) {
+        {"rm",      [&fs](const string &arg1, const string &) {
             if (arg1.empty())
                 throw runtime_error("Usage: rm <file>");
             fs.removeFile(arg1);
         }},
-        {"write",  [&fs](const string &arg1, const string &arg2) {
+        {"write",   [&fs](const string &arg1, const string &arg2) {
             if (arg1.empty() || arg2.empty())
                 throw runtime_error("Usage: write <file> <data>");
             fs.writeFile(arg1, arg2);
         }},
-        {"mv",     [&fs](const string &arg1, const string &arg2) {
+        {"mv",      [&fs](const string &arg1, const string &arg2) {
             if (arg1.empty() || arg2.empty())
                 throw runtime_error("Usage: mv <from> <to>");
             fs.moveFile(arg1, arg2);
         }},
-        {"cp",     [&fs](const string &arg1, const string &arg2) {
+        {"cp",      [&fs](const string &arg1, const string &arg2) {
             if (arg1.empty() || arg2.empty())
                 throw runtime_error("Usage: cp <from> <to>");
             fs.copyFile(arg1, arg2);
         }},
-        {"help",   [&fs](const string &, const string &) {
+        {"help",    [&fs](const string &, const string &) {
             printHelp();
         }},
-        {"exit",   [&fs](const string &, const string &) {
+        {"exit",    [&fs](const string &, const string &) {
             exit(EXIT_SUCCESS);
         }},
-        {"default",   [&fs](const string &arg1, const string &) {
+        {"default", [&fs](const string &arg1, const string &) {
             cout << "Unknown command: " << arg1 << endl << "Type 'help' to get help." << endl;
         }},
     };

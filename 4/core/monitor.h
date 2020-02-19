@@ -12,7 +12,6 @@ using namespace chrono;
 class Monitor {
 public:
     using ull = unsigned long long;
-    using is_iter = istreambuf_iterator<char>;
     struct CPUInfo {
         string vendorId;
         string modelName;

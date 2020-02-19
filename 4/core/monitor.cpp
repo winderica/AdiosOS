@@ -134,7 +134,7 @@ Monitor::MemoryInfo Monitor::getMemoryInfo() {
 }
 
 Monitor::Usage Monitor::getUsage() {
-    using namespace chrono;
+    using is_iter = istreambuf_iterator<char>;
     namespace fs = filesystem;
     auto prevBusy = usage.currentJiffies.busy();
     auto prevTotal = usage.currentJiffies.total();
