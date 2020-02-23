@@ -1,5 +1,4 @@
 #include <QApplication>
-#include <QColumnView>
 #include <sys/wait.h>
 #include <unistd.h>
 

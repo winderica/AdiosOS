@@ -195,7 +195,7 @@ string FileSystem::readInode(size_t index) {
     Block dataBlock{};
     string res;
     auto directFilled = true;
-    for (auto i = begin(inode.direct); i != end(inode.direct); i++) {
+    for (auto i = begin(inode.direct); i != end(inode.direct); i++) { // read direct blocks
         auto location = *i;
         auto mapIndex = getBlockMapIndex(location);
         if (location == 0 || blockMap[mapIndex]) {
@@ -208,7 +208,7 @@ string FileSystem::readInode(size_t index) {
     if (directFilled && inode.indirect != 0) {
         Block pointerBlock{};
         disk.read(inode.indirect, pointerBlock.data);
-        for (auto i = begin(pointerBlock.pointers); i != end(pointerBlock.pointers); i++) {
+        for (auto i = begin(pointerBlock.pointers); i != end(pointerBlock.pointers); i++) { // read indirect blocks
             auto location = *i;
             auto mapIndex = getBlockMapIndex(location);
             if (location == 0 || blockMap[mapIndex]) {
@@ -222,13 +222,13 @@ string FileSystem::readInode(size_t index) {
     return res;
 }
 
-void FileSystem::writeInode(size_t index, const string &src) { // TODO: offset?
+void FileSystem::writeInode(size_t index, const string &src) { // no plan to implement offset
     checkInode(index, true);
     if (src.length() >= (DIRECT_BLOCKS_PER_INODE + INDIRECT_BLOCKS_PER_INODE) * Disk::BLOCK_SIZE) {
         throw runtime_error("Source size exceeds capability of BFS");
     }
     auto inode = getInode(index);
-    auto srcOffset = writeBlocks(src, begin(inode.direct), end(inode.direct), 0);
+    auto srcOffset = writeBlocks(src, begin(inode.direct), end(inode.direct), 0); // write direct blocks
     if (srcOffset < src.length()) {
         Block pointerBlock{};
         if (inode.indirect == 0) {
@@ -240,11 +240,11 @@ void FileSystem::writeInode(size_t index, const string &src) { // TODO: offset?
         } else {
             disk.read(inode.indirect, pointerBlock.data);
         }
-        writeBlocks(src, begin(pointerBlock.pointers), end(pointerBlock.pointers), srcOffset);
+        writeBlocks(src, begin(pointerBlock.pointers), end(pointerBlock.pointers), srcOffset); // write indirect blocks
         disk.write(inode.indirect, pointerBlock.data);
     }
     inode.size = src.length();
-    inode.modification_time = getTime();
+    inode.modification_time = getTime(); // update modification time
     setInode(index, inode);
 }
 
@@ -395,7 +395,7 @@ FileSystem::InodeBase FileSystem::statFile(const string &path) {
 
 void FileSystem::copyFile(const string &from, const string &to) {
     if (from[from.size() - 1] == '/' || to[to.size() - 1] == '/') {
-        throw runtime_error("Copying directory is not supported"); // TODO
+        throw runtime_error("Copying directory is not supported");
     }
     createFile(to);
     writeFile(to, readFile(from));
@@ -403,7 +403,7 @@ void FileSystem::copyFile(const string &from, const string &to) {
 
 void FileSystem::moveFile(const string &from, const string &to) {
     if (from[from.size() - 1] == '/' || to[to.size() - 1] == '/') {
-        throw runtime_error("Moving directory is not supported"); // TODO
+        throw runtime_error("Moving directory is not supported");
     }
     copyFile(from, to);
     removeFile(from);
