@@ -14,10 +14,10 @@ ENV TOOLCHAIN=/root/x-tools/x86_64-unknown-linux-gnu/bin
 
 RUN mkdir -p $CONFIG $APPS $LINUX_BUILD $BUILDROOT_BUILD $MODULES
 
-COPY ../config /builds/config/
-COPY ../test /builds/apps/
-COPY ../3 /builds/modules/
-COPY ../2/copy.c /
+COPY config /builds/config/
+COPY test /builds/apps/
+COPY 3 /builds/modules/
+COPY 2/copy.c /
 
 RUN apt update &&\
     apt install -y qemu-system-x86 bc build-essential ccache libncurses-dev libssl-dev u-boot-tools libelf-dev \
