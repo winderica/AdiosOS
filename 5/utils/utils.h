@@ -13,6 +13,8 @@
 using namespace std;
 
 struct Utils {
+    static vector<string> split(const string &str, const string &delimiter);
+
     static _Put_time<char> formatTimePoint(uint32_t timePoint);
 
     static stringstream formatSize(double originalSize);

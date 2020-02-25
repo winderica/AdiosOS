@@ -84,67 +84,67 @@ int main(int argc, char *argv[]) {
         {"mount",   [&fs](const string &, const string &) {
             fs.mount();
         }},
-        {"cat",     [&fs](const string &arg1, const string &) {
-            if (arg1.empty())
+        {"cat",     [&fs](const string &file, const string &) {
+            if (file.empty())
                 throw runtime_error("Usage: cat <file>");
-            store(fs, arg1, "/dev/stdout");
+            store(fs, file, "/dev/stdout");
             cout << endl;
         }},
-        {"store",   [&fs](const string &arg1, const string &arg2) {
-            if (arg1.empty() || arg2.empty())
+        {"store",   [&fs](const string &from, const string &to) {
+            if (from.empty() || to.empty())
                 throw runtime_error("Usage: store <file> <file_outside_bfs>");
-            store(fs, arg1, arg2);
+            store(fs, from, to);
         }},
-        {"load",    [&fs](const string &arg1, const string &arg2) {
-            if (arg1.empty() || arg2.empty())
+        {"load",    [&fs](const string &from, const string &to) {
+            if (from.empty() || to.empty())
                 throw runtime_error("Usage: load <file_outside_bfs> <file>");
-            load(fs, arg1, arg2);
+            load(fs, from, to);
         }},
-        {"touch",   [&fs](const string &arg1, const string &) {
-            if (arg1.empty())
+        {"touch",   [&fs](const string &file, const string &) {
+            if (file.empty())
                 throw runtime_error("Usage: touch <file>");
-            if (arg1[arg1.length() - 1] == '/')
+            if (file[file.length() - 1] == '/')
                 throw runtime_error("Touching directory is not allowed. Please use mkdir instead");
-            fs.createFile(arg1);
+            fs.createFile(file);
         }},
-        {"mkdir",   [&fs](const string &arg1, const string &) {
-            if (arg1.empty())
+        {"mkdir",   [&fs](const string &directory, const string &) {
+            if (directory.empty())
                 throw runtime_error("Usage: mkdir <directory>");
-            fs.createFile(arg1[arg1.length() - 1] == '/' ? arg1 : arg1 + '/');
+            fs.createFile(directory[directory.length() - 1] == '/' ? directory : directory + '/');
         }},
-        {"ls",      [&fs](const string &arg1, const string &) {
-            for (const auto &[filename, inode]: fs.listDirectory(arg1))
+        {"ls",      [&fs](const string &directory, const string &) {
+            for (const auto &[filename, inode]: fs.listDirectory(directory))
                 printStat(filename, inode);
         }},
-        {"cd",      [&fs](const string &arg1, const string &) {
-            if (arg1.empty())
+        {"cd",      [&fs](const string &directory, const string &) {
+            if (directory.empty())
                 throw runtime_error("Usage: cd <directory>");
-            fs.changeDirectory(arg1);
+            fs.changeDirectory(directory);
         }},
-        {"stat",    [&fs](const string &arg1, const string &) {
-            if (arg1.empty())
+        {"stat",    [&fs](const string &file, const string &) {
+            if (file.empty())
                 throw runtime_error("Usage: stat <file>");
-            printStat(arg1, fs.statFile(arg1));
+            printStat(file, fs.statFile(file));
         }},
-        {"rm",      [&fs](const string &arg1, const string &) {
-            if (arg1.empty())
+        {"rm",      [&fs](const string &file, const string &) {
+            if (file.empty())
                 throw runtime_error("Usage: rm <file>");
-            fs.removeFile(arg1);
+            fs.removeFile(file);
         }},
-        {"write",   [&fs](const string &arg1, const string &arg2) {
-            if (arg1.empty() || arg2.empty())
+        {"write",   [&fs](const string &file, const string &data) {
+            if (file.empty() || data.empty())
                 throw runtime_error("Usage: write <file> <data>");
-            fs.writeFile(arg1, arg2);
+            fs.writeFile(file, data);
         }},
-        {"mv",      [&fs](const string &arg1, const string &arg2) {
-            if (arg1.empty() || arg2.empty())
+        {"mv",      [&fs](const string &from, const string &to) {
+            if (from.empty() || to.empty())
                 throw runtime_error("Usage: mv <from> <to>");
-            fs.moveFile(arg1, arg2);
+            fs.moveFile(from, to);
         }},
-        {"cp",      [&fs](const string &arg1, const string &arg2) {
-            if (arg1.empty() || arg2.empty())
+        {"cp",      [&fs](const string &from, const string &to) {
+            if (from.empty() || to.empty())
                 throw runtime_error("Usage: cp <from> <to>");
-            fs.copyFile(arg1, arg2);
+            fs.copyFile(from, to);
         }},
         {"help",    [&fs](const string &, const string &) {
             printHelp();
@@ -152,8 +152,8 @@ int main(int argc, char *argv[]) {
         {"exit",    [&fs](const string &, const string &) {
             exit(EXIT_SUCCESS);
         }},
-        {"default", [&fs](const string &arg1, const string &) {
-            cout << "Unknown command: " << arg1 << endl << "Type 'help' to get help." << endl;
+        {"default", [&fs](const string &cmd, const string &) {
+            cout << "Unknown command: " << cmd << endl << "Type 'help' to get help." << endl;
         }},
     };
     cout << welcomeMessage;
@@ -165,7 +165,8 @@ int main(int argc, char *argv[]) {
                 break;
             }
             istringstream iss(input);
-            iss >> cmd >> arg1 >> arg2;
+            iss >> cmd >> arg1 >> ws; // consume whitespace
+            getline(iss, arg2); // arg2 is the remainder
             funcs.contains(cmd) ? funcs[cmd](arg1, arg2) : funcs["default"](input, "");
         } catch (runtime_error &e) {
             cout << e.what() << endl;

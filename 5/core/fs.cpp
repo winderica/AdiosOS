@@ -1,4 +1,5 @@
 #include "fs.h"
+#include "../utils/utils.h"
 
 #include <chrono>
 
@@ -270,7 +271,7 @@ int FileSystem::writeBlocks(const string &src, uint32_t *begin, const uint32_t *
 
 size_t FileSystem::locateFile(const string &path) {
     auto isDirectory = path[path.size() - 1] == '/';
-    auto parts = split(path, "/");
+    auto parts = Utils::split(path, "/");
     auto currentIndex = path[0] == '/' ? 0 : currentInodeIndex;
     for (auto &part : parts) {
         auto data = readInode(currentIndex);
@@ -309,7 +310,7 @@ void FileSystem::createFile(const string &path) {
         throw runtime_error("Root directory has already been created");
     }
     auto isDirectory = path[path.size() - 1] == '/';
-    auto parts = split(path, "/");
+    auto parts = Utils::split(path, "/");
     auto filename = parts[parts.size() - 1];
     if (filename.length() <= 0 || filename.length() >= sizeof(DirectoryEntry::filename)) {
         throw runtime_error("Illegal filename");
@@ -441,23 +442,6 @@ void FileSystem::writeFile(const string &path, const string &src) {
         throw runtime_error("Writing directory is not allowed");
     }
     writeInode(locateFile(path), src);
-}
-
-vector<string> FileSystem::split(const string &str, const string &delimiter) {
-    vector<string> tokens;
-    size_t prev = 0, pos;
-    do {
-        pos = str.find(delimiter, prev);
-        if (pos == string::npos) {
-            pos = str.length();
-        }
-        auto token = str.substr(prev, pos - prev);
-        if (!token.empty()) {
-            tokens.push_back(token);
-        }
-        prev = pos + delimiter.length();
-    } while (pos < str.length() && prev < str.length());
-    return tokens;
 }
 
 FileSystem::~FileSystem() {

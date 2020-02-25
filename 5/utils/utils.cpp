@@ -26,3 +26,20 @@ stringstream Utils::formatSize(double originalSize) {
     }
     return ss;
 }
+
+vector<string> Utils::split(const string &str, const string &delimiter) {
+    vector<string> tokens;
+    size_t prev = 0, pos;
+    do {
+        pos = str.find(delimiter, prev);
+        if (pos == string::npos) {
+            pos = str.length();
+        }
+        auto token = str.substr(prev, pos - prev);
+        if (!token.empty()) {
+            tokens.push_back(token);
+        }
+        prev = pos + delimiter.length();
+    } while (pos < str.length() && prev < str.length());
+    return tokens;
+}

@@ -101,8 +101,6 @@ private:
 
     void checkBlock(size_t index);
 
-    static vector<string> split(const string &str, const string &delimiter);
-
     Inode getInode(size_t index);
 
     void setInode(size_t index, Inode inode);
