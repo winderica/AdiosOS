@@ -1,12 +1,15 @@
 #include <QVBoxLayout>
 #include <QGroupBox>
 #include <QFormLayout>
+#include <QtCharts/QValueAxis>
 
 #include "performanceTab.h"
 #include "../utils/utils.h"
 
 PerformanceTab::PerformanceTab(QWidget *parent) : QWidget(parent) {
     auto mainLayout = new QVBoxLayout();
+
+    cpuUsagePoints = QVector<QPointF>(POINTS_NUMBER + 1, QPointF(0, 0));
 
     bootTimeLabel = new QLabel();
     idleTimeLabel = new QLabel();
@@ -23,10 +26,30 @@ PerformanceTab::PerformanceTab(QWidget *parent) : QWidget(parent) {
     cpuTimeLayout->addRow(new QLabel("idleTime:"), idleTimeLabel);
     cpuTimeLayout->addRow(new QLabel("upTime:"), upTimeLabel);
 
+    auto cpuUsageChart = new QChart();
+    cpuUsageSeries = new QLineSeries();
+    cpuUsageChart->addSeries(cpuUsageSeries);
+    cpuUsageChart->legend()->hide();
+    auto axisX = new QValueAxis();
+    axisX->setRange(-POINTS_NUMBER, 0);
+    axisX->setLabelFormat("%g");
+    axisX->setTitleText("Time/s");
+    auto axisY = new QValueAxis();
+    axisY->setRange(0, 100);
+    axisY->setTitleText("Utilization/%");
+    cpuUsageChart->addAxis(axisX, Qt::AlignBottom);
+    cpuUsageChart->addAxis(axisY, Qt::AlignLeft);
+    cpuUsageSeries->attachAxis(axisX);
+    cpuUsageSeries->attachAxis(axisY);
+    auto chartView = new QChartView(cpuUsageChart);
+    chartView->setMinimumSize(800, 600);
+    chartView->setRenderHint(QPainter::Antialiasing);
+
     auto cpuUsageGroupBox = new QGroupBox("CPU Usage");
     auto cpuUsageLayout = new QFormLayout();
     cpuUsageGroupBox->setLayout(cpuUsageLayout);
 
+    cpuUsageLayout->addRow(chartView);
     cpuUsageLayout->addRow(cpuUsageWidget);
 
     auto memoryUsageGroupBox = new QGroupBox("Memory Usage");
@@ -50,12 +73,21 @@ PerformanceTab::~PerformanceTab() {
     delete bootTimeLabel;
     delete idleTimeLabel;
     delete upTimeLabel;
+    delete cpuUsageSeries;
 }
 
 void PerformanceTab::updateData(Monitor::TimeInfo cpuTime, double cpuUsage, Monitor::MemoryInfo memoryInfo) {
     bootTimeLabel->setText(Utils::formatTimePoint(cpuTime.bootTime).c_str());
     idleTimeLabel->setText(Utils::formatTime(cpuTime.idleTime).c_str());
     upTimeLabel->setText(Utils::formatTime(cpuTime.upTime).c_str());
+
+    cpuUsagePoints.pop_front();
+    cpuUsagePoints.push_back(QPointF(0, cpuUsage * 100));
+    int i = -POINTS_NUMBER;
+    for (auto &data: cpuUsagePoints) {
+        data.setX(i++);
+    }
+    cpuUsageSeries->replace(cpuUsagePoints);
 
     cpuUsageWidget->setFormat(QString("CPU: %1%").arg(cpuUsage * 100, 0, 'g', 3));
     cpuUsageWidget->setValue(cpuUsage * 100);
