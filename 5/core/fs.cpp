@@ -1,8 +1,6 @@
 #include "fs.h"
 #include "../utils/utils.h"
 
-#include <chrono>
-
 FileSystem::FileSystem(Disk &disk) : superBlock(SuperBlock()), disk(disk) {
     if (disk.size() < 16) {
         throw runtime_error("Disk size too small");
@@ -31,6 +29,9 @@ void FileSystem::setBlockMap(size_t index, bool free) {
 }
 
 void FileSystem::format() {
+    if (currentUid != 0) {
+        throw runtime_error("Permission denied: formatting can only performed by root(uid 0)");
+    }
     { // write SuperBlock
         Block block{};
         block.super = superBlock;
@@ -50,7 +51,8 @@ void FileSystem::format() {
     if (!disk.mounted()) {
         disk.mount();
     }
-    auto rootIndex = createInode(01644);
+    currentInodeIndex = 0; // go back to /
+    auto rootIndex = createInode(Permissions::ALL_DIR);
     if (rootIndex != 0) { // root inode index should be 0
         throw runtime_error("Unexpected root inode index " + to_string(rootIndex));
     }
@@ -69,6 +71,10 @@ void FileSystem::mount() {
     inodeMap = block.inodeMap;
     disk.read(2, block.data);
     blockMap = block.blockMap;
+}
+
+void FileSystem::setUid(uint16_t uid) {
+    currentUid = uid;
 }
 
 uint32_t FileSystem::getTime() {
@@ -92,7 +98,7 @@ size_t FileSystem::getBlockMapIndex(size_t location) {
 
 void FileSystem::checkInode(size_t index, bool shouldBeUsed) {
     if (!disk.mounted()) {
-        throw runtime_error("Disk is not mounted");
+        throw runtime_error("BFS is not mounted");
     }
     if (index >= superBlock.inodeBlocks) {
         throw runtime_error("Space for inodes is not enough");
@@ -104,7 +110,7 @@ void FileSystem::checkInode(size_t index, bool shouldBeUsed) {
 
 void FileSystem::checkBlock(size_t index) {
     if (!disk.mounted()) {
-        throw runtime_error("Disk is not mounted");
+        throw runtime_error("BFS is not mounted");
     }
     if (index >= superBlock.dataBlocks) {
         throw runtime_error("Space for blocks is not enough");
@@ -122,17 +128,17 @@ void FileSystem::initDirectory(size_t index, size_t parent) {
     writeInode(index, data);
 }
 
-ssize_t FileSystem::createInode(uint16_t mode) {
+size_t FileSystem::createInode(Permissions mode) {
     auto index = inodeMap._Find_first(); // first free inode
     checkInode(index);
     setInodeMap(index, false); // mark as used
 
     Inode inode{};
     inode.mode = mode;
-    inode.uid = 0; // TODO: access control, uid, gid
+    inode.uid = currentUid;
     inode.size = 0;
-    inode.create_time = getTime();
-    inode.modification_time = inode.create_time;
+    inode.creationTime = getTime();
+    inode.modificationTime = inode.creationTime;
     setInode(index, inode);
 
     return index;
@@ -193,6 +199,9 @@ void FileSystem::setInode(size_t index, FileSystem::Inode inode) {
 string FileSystem::readInode(size_t index) {
     checkInode(index, true);
     auto inode = getInode(index);
+    if ((inode.mode & (inode.uid == currentUid ? Permissions::OWN_R : Permissions::OTH_R)) == Permissions::NONE) {
+        throw runtime_error("Permission denied");
+    }
     Block dataBlock{};
     string res;
     auto directFilled = true;
@@ -229,6 +238,9 @@ void FileSystem::writeInode(size_t index, const string &src) { // no plan to imp
         throw runtime_error("Source size exceeds capability of BFS");
     }
     auto inode = getInode(index);
+    if ((inode.mode & (inode.uid == currentUid ? Permissions::OWN_W : Permissions::OTH_W)) == Permissions::NONE) {
+        throw runtime_error("Permission denied");
+    }
     auto srcOffset = writeBlocks(src, begin(inode.direct), end(inode.direct), 0); // write direct blocks
     if (srcOffset < src.length()) {
         Block pointerBlock{};
@@ -245,14 +257,14 @@ void FileSystem::writeInode(size_t index, const string &src) { // no plan to imp
         disk.write(inode.indirect, pointerBlock.data);
     }
     inode.size = src.length();
-    inode.modification_time = getTime(); // update modification time
+    inode.modificationTime = getTime(); // update modification time
     setInode(index, inode);
 }
 
-int FileSystem::writeBlocks(const string &src, uint32_t *begin, const uint32_t *end, int srcOffset) {
+int FileSystem::writeBlocks(const string &src, uint32_t *begin, const uint32_t *end, int offset) {
     auto BLOCK_SIZE = Disk::BLOCK_SIZE;
-    for (auto i = begin; i != end && srcOffset < src.length(); i++, srcOffset += BLOCK_SIZE) {
-        auto length = min(BLOCK_SIZE, src.length() - srcOffset);
+    for (auto i = begin; i != end && offset < src.length(); i++, offset += BLOCK_SIZE) {
+        auto length = min(BLOCK_SIZE, src.length() - offset);
         Block dataBlock{};
         if (*i == 0) {
             auto mapIndex = blockMap._Find_first();
@@ -263,14 +275,13 @@ int FileSystem::writeBlocks(const string &src, uint32_t *begin, const uint32_t *
             disk.read(*i, dataBlock.data);
         }
         auto newData = string(dataBlock.data, BLOCK_SIZE);
-        newData.replace(0, length, src, srcOffset, length);
+        newData.replace(0, length, src, offset, length);
         disk.write(*i, newData.data());
     }
-    return srcOffset;
+    return offset;
 }
 
 size_t FileSystem::locateFile(const string &path) {
-    auto isDirectory = path[path.size() - 1] == '/';
     auto parts = Utils::split(path, "/");
     auto currentIndex = path[0] == '/' ? 0 : currentInodeIndex;
     for (auto &part : parts) {
@@ -288,11 +299,6 @@ size_t FileSystem::locateFile(const string &path) {
             throw runtime_error("Illegal path: " + part + " does not exist");
         }
     }
-    auto inode = getInode(currentIndex);
-    auto isDirectoryMode = (inode.mode & 01000) != 0;
-    if (isDirectoryMode ^ isDirectory) {
-        throw runtime_error("Specified file is not a" + (isDirectoryMode ? string(" regular file") : " directory"));
-    }
     return currentIndex;
 }
 
@@ -302,7 +308,13 @@ size_t FileSystem::locateParent(const string &path) {
     if (lastSlash == string::npos) {
         return currentInodeIndex;
     }
-    return locateFile(parentPath.substr(0, lastSlash) + "/");
+    parentPath = parentPath.substr(0, lastSlash) + "/";
+    auto index = locateFile(parentPath);
+    auto inode = getInode(index);
+    if ((inode.mode & Permissions::DIR) == Permissions::NONE) {
+        throw runtime_error("Illegal path: " + parentPath + " is not a directory");
+    }
+    return index;
 }
 
 void FileSystem::createFile(const string &path) {
@@ -332,7 +344,10 @@ void FileSystem::createFile(const string &path) {
     auto &newEntry = temp.entries[inode.size / DIRECTORY_ENTRY_SIZE];
     // std::copy is a more C++ way than str(n)cpy
     copy(filename.begin(), filename.end(), newEntry.filename);
-    newEntry.inode = createInode(isDirectory ? 01644 : 0644);
+    newEntry.inode = createInode(
+        (isDirectory ? Permissions::DIR : Permissions::NONE)
+        | Permissions::OWN_RW | Permissions::GRP_R | Permissions::OTH_R
+    );
     if (isDirectory) {
         initDirectory(newEntry.inode, index);
     }
@@ -340,10 +355,13 @@ void FileSystem::createFile(const string &path) {
 }
 
 void FileSystem::removeFile(const string &path) {
-    auto isDirectory = path[path.size() - 1] == '/';
     auto index = locateFile(path);
     if (index == 0) {
         throw runtime_error("Root directory cannot be removed");
+    }
+    auto inode = getInode(index);
+    if (inode.uid != currentUid) { // only owner is checked when removing
+        throw runtime_error("Permission denied: file/directory can only be removed by owner");
     }
     auto parent = locateParent(path);
     union {
@@ -364,7 +382,7 @@ void FileSystem::removeFile(const string &path) {
     stack<size_t> directories;
     vector<size_t> toRemove;
     toRemove.push_back(index);
-    if (isDirectory) {
+    if ((inode.mode & Permissions::DIR) != Permissions::NONE) {
         directories.push(index);
     }
     while (!directories.empty()) { // bfs in BFS
@@ -376,8 +394,8 @@ void FileSystem::removeFile(const string &path) {
             if (string(entry.filename) == "." || string(entry.filename) == "..") {
                 continue;
             }
-            auto inode = getInode(entry.inode);
-            if ((inode.mode & 01000) != 0) {
+            inode = getInode(entry.inode);
+            if ((inode.mode & Permissions::DIR) != Permissions::NONE) {
                 directories.push(entry.inode);
             }
             toRemove.push_back(entry.inode);
@@ -391,7 +409,7 @@ void FileSystem::removeFile(const string &path) {
 FileSystem::InodeBase FileSystem::statFile(const string &path) {
     auto inode = getInode(locateFile(path));
     // cast from Inode to InodeBase directly could be more concise, though.
-    return {inode.mode, inode.uid, inode.size, inode.create_time, inode.modification_time};
+    return {inode.mode, inode.uid, inode.size, inode.creationTime, inode.modificationTime};
 }
 
 void FileSystem::copyFile(const string &from, const string &to) {
@@ -411,7 +429,12 @@ void FileSystem::moveFile(const string &from, const string &to) {
 }
 
 void FileSystem::changeDirectory(const string &path) {
-    currentInodeIndex = locateFile(path[path.length() - 1] == '/' ? path : path + '/');
+    auto index = locateFile(path);
+    auto inode = getInode(index);
+    if ((inode.mode & Permissions::DIR) == Permissions::NONE) {
+        throw runtime_error("Illegal path: " + path + " is not a directory");
+    }
+    currentInodeIndex = index;
 }
 
 vector<pair<string, FileSystem::InodeBase>> FileSystem::listDirectory(const string &path) {
@@ -420,7 +443,12 @@ vector<pair<string, FileSystem::InodeBase>> FileSystem::listDirectory(const stri
     if (path.empty()) {
         data = readInode(currentInodeIndex);
     } else {
-        data = readInode(locateFile(path[path.length() - 1] == '/' ? path : path + '/'));
+        auto index = locateFile(path);
+        auto inode = getInode(index);
+        if ((inode.mode & Permissions::DIR) == Permissions::NONE) {
+            throw runtime_error("Illegal path: " + path + " is not a directory");
+        }
+        data = readInode(index);
     }
     auto entries = reinterpret_cast<DirectoryEntry *>(data.data());
     for (auto i = 0; i < data.size() / DIRECTORY_ENTRY_SIZE; i++) {
@@ -431,17 +459,45 @@ vector<pair<string, FileSystem::InodeBase>> FileSystem::listDirectory(const stri
 }
 
 string FileSystem::readFile(const string &path) {
-    if (path[path.size() - 1] == '/') {
+    auto index = locateFile(path);
+    auto inode = getInode(index);
+    if ((inode.mode & Permissions::DIR) != Permissions::NONE) {
         throw runtime_error("Reading directory is not allowed");
     }
-    return readInode(locateFile(path));
+    return readInode(index);
 }
 
 void FileSystem::writeFile(const string &path, const string &src) {
-    if (path[path.size() - 1] == '/') {
+    auto index = locateFile(path);
+    auto inode = getInode(index);
+    if ((inode.mode & Permissions::DIR) != Permissions::NONE) {
         throw runtime_error("Writing directory is not allowed");
     }
-    writeInode(locateFile(path), src);
+    writeInode(index, src);
+}
+
+void FileSystem::changeOwner(const string &path, uint16_t uid) {
+    auto index = locateFile(path);
+    if (index == 0) {
+        throw runtime_error("Permission denied: uid of root directory cannot be changed");
+    }
+    auto inode = getInode(index);
+    inode.uid = uid;
+    setInode(index, inode);
+}
+
+void FileSystem::changeMode(const string &path, Permissions mode) {
+    auto index = locateFile(path);
+    if (index == 0) {
+        throw runtime_error("Permission denied: mode of root directory cannot be changed");
+    }
+    auto inode = getInode(index);
+    if (inode.uid != currentUid) {
+        throw runtime_error("Permission denied: mode can only be changed by owner");
+    }
+    mode = mode & Permissions::ALL; // mode should not be larger than 0777
+    inode.mode = (inode.mode & Permissions::DIR) | mode;
+    setInode(index, inode);
 }
 
 FileSystem::~FileSystem() {

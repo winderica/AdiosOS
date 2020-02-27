@@ -1,21 +1,94 @@
 #ifndef _FS_H
 #define _FS_H
 
-#include "disk.h"
-
 #include <string>
 #include <bitset>
 #include <vector>
 #include <stack>
+#include <iostream>
+
+#include "disk.h"
 
 using namespace std;
+
+enum class Permissions : uint16_t {
+    NONE = 0,
+    OTH_E = 01, // Others may execute
+    OTH_W = 02, // Others may write
+    OTH_R = 04, // Others may read
+    OTH_WE = 03,
+    OTH_RE = 05,
+    OTH_RW = 06,
+    OTH_A = 07,
+    GRP_E = 010, // Group members may execute
+    GRP_W = 020, // Group members may write
+    GRP_R = 040, // Group members may read
+    GRP_WE = 030,
+    GRP_RE = 050,
+    GRP_RW = 060,
+    GRP_A = 070,
+    OWN_E = 0100, // Owner may execute
+    OWN_W = 0200, // Owner may write
+    OWN_R = 0400, // Owner may read
+    OWN_WE = 0300,
+    OWN_RE = 0500,
+    OWN_RW = 0600,
+    OWN_A = 0700,
+    DIR = 01000, // Directory
+    ALL = 0777,
+    ALL_DIR = 01777,
+};
+
+using PermissionsT = underlying_type<Permissions>::type;
+
+inline Permissions operator|(Permissions lhs, Permissions rhs) {
+    return static_cast<Permissions>(static_cast<PermissionsT>(lhs) | static_cast<PermissionsT>(rhs));
+}
+
+inline Permissions operator&(Permissions lhs, Permissions rhs) {
+    return static_cast<Permissions>(static_cast<PermissionsT>(lhs) & static_cast<PermissionsT>(rhs));
+}
+
+inline Permissions operator^(Permissions lhs, Permissions rhs) {
+    return static_cast<Permissions>(static_cast<PermissionsT>(lhs) ^ static_cast<PermissionsT>(rhs));
+}
+
+inline Permissions operator~(Permissions rhs) {
+    return static_cast<Permissions>(~static_cast<PermissionsT>(rhs));
+}
+
+inline Permissions &operator|=(Permissions &lhs, Permissions rhs) {
+    lhs = static_cast<Permissions>(static_cast<PermissionsT>(lhs) | static_cast<PermissionsT>(rhs));
+    return lhs;
+}
+
+inline Permissions &operator&=(Permissions &lhs, Permissions rhs) {
+    lhs = static_cast<Permissions>(static_cast<PermissionsT>(lhs) & static_cast<PermissionsT>(rhs));
+    return lhs;
+}
+
+inline Permissions &operator^=(Permissions &lhs, Permissions rhs) {
+    lhs = static_cast<Permissions>(static_cast<PermissionsT>(lhs) ^ static_cast<PermissionsT>(rhs));
+    return lhs;
+}
+
+inline ostream &operator<<(ostream &os, Permissions p) {
+    auto fill = os.fill();
+    auto width = os.width();
+    os.fill('0');
+    os.width(4);
+    os << static_cast<PermissionsT>(p);
+    os.fill(fill);
+    os.width(width);
+    return os;
+}
 
 /*
  * File System: total * 4096B, can be up to 128MB
  * [SuperBlock] [InodeBitMap] [BlockBitMap] [InodeBlock    ...    InodeBlock] [DataBlock ... DataBlock]
  *  1 * 4096B     1 * 4096B     1 * 4096B           total / 16 * 4096B              rest * 4096B
  * Inode: 64B
- * [mode] [uid] [size] [create_time] [modification_time] [direct ... direct] [indirect]
+ * [mode] [uid] [size] [creationTime] [modificationTime] [direct ... direct] [indirect]
  *   2B    2B     4B        4B              4B                 4B * 11           4B
  */
 
@@ -39,24 +112,11 @@ public:
     };
 
     struct InodeBase {
-        /*
-         * Mode: file mode
-         * 0x1: Others may execute
-         * 0x2: Others may write
-         * 0x4: Others may read
-         * 0x8: Group members may execute
-         * 0x10: Group members may write
-         * 0x20: Group members may read
-         * 0x40: Owner may execute
-         * 0x80: Owner may write
-         * 0x100: Owner may read
-         * 0x200: Directory
-         */
-        uint16_t mode;
+        Permissions mode; // File mode
         uint16_t uid; // Owner uid
         uint32_t size; // File size
-        uint32_t create_time; // Last create time
-        uint32_t modification_time; // Last modification time
+        uint32_t creationTime; // Last creation time
+        uint32_t modificationTime; // Last modification time
     };
 
     struct Inode : InodeBase {
@@ -83,7 +143,8 @@ private:
     SuperBlock superBlock;
     bitset<Disk::BLOCK_SIZE * 8> inodeMap; // 1: free, 0: used
     bitset<Disk::BLOCK_SIZE * 8> blockMap; // 1: free, 0: used
-    size_t currentInodeIndex = 0;
+    size_t currentInodeIndex = 0; // 0 is root directory
+    uint16_t currentUid = 0; // 0 is root
 
     static uint32_t getTime();
 
@@ -105,7 +166,7 @@ private:
 
     void setInode(size_t index, Inode inode);
 
-    ssize_t createInode(uint16_t mode = 0644);
+    size_t createInode(Permissions mode = Permissions::OWN_RW | Permissions::GRP_R | Permissions::OTH_R);
 
     void removeInode(size_t index);
 
@@ -113,7 +174,7 @@ private:
 
     void writeInode(size_t index, const string &src);
 
-    int writeBlocks(const string &src, uint32_t *begin, const uint32_t *end, int srcOffset);
+    int writeBlocks(const string &src, uint32_t *begin, const uint32_t *end, int offset);
 
     void initDirectory(size_t index, size_t parent);
 
@@ -126,6 +187,8 @@ public:
 
     void mount();
 
+    void setUid(uint16_t uid);
+
     void createFile(const string &path);
 
     void copyFile(const string &from, const string &to);
@@ -136,13 +199,17 @@ public:
 
     InodeBase statFile(const string &path);
 
-    vector<pair<string, FileSystem::InodeBase>> listDirectory(const string &path);
+    vector<pair<string, InodeBase>> listDirectory(const string &path);
 
     void changeDirectory(const string &path);
 
     string readFile(const string &path);
 
     void writeFile(const string &path, const string &src);
+
+    void changeOwner(const string &path, uint16_t uid);
+
+    void changeMode(const string &path, Permissions mode);
 
     explicit FileSystem(Disk &disk);
 

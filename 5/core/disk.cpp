@@ -55,14 +55,14 @@ void Disk::write(unsigned int index, char *data) {
 
 void Disk::mount() {
     if (_mounted) {
-        throw runtime_error("Disk has already been mounted.");
+        throw runtime_error("A filesystem has already been mounted.");
     }
     _mounted = true;
 }
 
 void Disk::unmount() {
     if (!_mounted) {
-        throw runtime_error("Disk is not mounted");
+        throw runtime_error("No filesystem is not mounted");
     }
     _mounted = false;
 }

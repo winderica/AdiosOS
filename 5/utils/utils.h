@@ -4,6 +4,7 @@
 #include <iostream>
 #include <chrono>
 #include <iomanip>
+#include <vector>
 
 #define KB              1000
 #define MB              1000000

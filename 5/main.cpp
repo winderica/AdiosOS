@@ -40,11 +40,11 @@ void load(FileSystem &fs, const string &path, const string &filename) {
 }
 
 void printStat(const string &filename, FileSystem::InodeBase inode) {
-    cout << setw(5) << Utils::formatSize(inode.size).str()
-         << oct << setw(5) << inode.mode
+    cout << setw(5) << Utils::formatSize(inode.size).str() << " "
+         << oct << inode.mode
          << dec << setw(5) << inode.uid << " "
-         << Utils::formatTimePoint(inode.create_time) << " "
-         << Utils::formatTimePoint(inode.modification_time) << " "
+         << Utils::formatTimePoint(inode.creationTime) << " "
+         << Utils::formatTimePoint(inode.modificationTime) << " "
          << filename << endl;
 }
 
@@ -52,17 +52,21 @@ void printHelp() {
     cout << "Commands:" << endl
          << "    format" << endl
          << "    mount" << endl
-         << "    cat <file>" << endl
          << "    store <file> <file_outside_bfs>" << endl
          << "    load <file_outside_bfs> <file>" << endl
          << "    touch <file>" << endl
          << "    mkdir <directory>" << endl
+         << "    cd <directory>" << endl
          << "    ls [directory]" << endl
          << "    stat <file>" << endl
-         << "    rm <file>" << endl
+         << "    cat <file>" << endl
          << "    write <file> <data>" << endl
          << "    mv <from> <to>" << endl
          << "    cp <from> <to>" << endl
+         << "    rm <file>" << endl
+         << "    su <uid>" << endl
+         << "    chown <uid> <file>" << endl
+         << "    chmod <mode> <file>" << endl
          << "    help" << endl
          << "    exit" << endl;
 }
@@ -83,6 +87,27 @@ int main(int argc, char *argv[]) {
         }},
         {"mount",   [&fs](const string &, const string &) {
             fs.mount();
+        }},
+        {"su",      [&fs](const string &uid, const string &) {
+            if (uid.empty())
+                throw runtime_error("Usage: su <uid>");
+            fs.setUid(stoi(uid));
+        }},
+        {"chown",   [&fs](const string &uid, const string &file) {
+            if (file.empty() || uid.empty())
+                throw runtime_error("Usage: chown <uid> <file>");
+            fs.changeOwner(file, stoi(uid));
+        }},
+        {"chmod",   [&fs](const string &mode, const string &file) {
+            if (file.empty() || mode.empty())
+                throw runtime_error("Usage: chmod <mode> <file>");
+            Permissions castMode;
+            try {
+                castMode = static_cast<Permissions>(stoi(mode, nullptr, 8));
+            } catch (...) {
+                throw runtime_error("Mode should be in octet");
+            }
+            fs.changeMode(file, castMode);
         }},
         {"cat",     [&fs](const string &file, const string &) {
             if (file.empty())
@@ -170,6 +195,10 @@ int main(int argc, char *argv[]) {
             funcs.contains(cmd) ? funcs[cmd](arg1, arg2) : funcs["default"](input, "");
         } catch (runtime_error &e) {
             cout << e.what() << endl;
+        } catch (invalid_argument &e) {
+            cout << "Invalid Argument: " << e.what() << endl;
+        } catch (...) {
+            cout << "Unexpected Error" << endl;
         }
     }
     return EXIT_SUCCESS;
