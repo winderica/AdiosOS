@@ -97,12 +97,6 @@ private:
 
     void readModules();
 
-    static pair<double, double> readUpTime();
-
-    static vector<string> split(const string &str, const string &delimiter);
-
-    static inline ull parseLine(const string &data);
-
 public:
     Monitor();
 
@@ -112,7 +106,7 @@ public:
 
     string getHostname();
 
-    Monitor::CPUInfo getCPUInfo();
+    CPUInfo getCPUInfo();
 
     Usage getUsage();
 

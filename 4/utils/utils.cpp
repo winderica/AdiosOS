@@ -57,3 +57,35 @@ string Utils::formatPercentage(double d) {
     ss << fixed << setprecision(1) << d * 100 << "%";
     return ss.str();
 }
+
+
+vector<string> Utils::split(const string &str, const string &delimiter) {
+    vector<string> tokens;
+    size_t prev = 0, pos;
+    do {
+        pos = str.find(delimiter, prev);
+        if (pos == string::npos) {
+            pos = str.length();
+        }
+        auto token = str.substr(prev, pos - prev);
+        if (!token.empty()) {
+            tokens.push_back(token);
+        }
+        prev = pos + delimiter.length();
+    } while (pos < str.length() && prev < str.length());
+    return tokens;
+}
+
+Utils::ull Utils::parseLine(const string &data) {
+    ull x = 0;
+    auto i = 0;
+    // fast read, not safe for general usage
+    while (data[i] < '0' || data[i] > '9') {
+        i++;
+    }
+    while (data[i] >= '0' && data[i] <= '9') {
+        x = (x << 3) + (x << 1) + (data[i] - '0');
+        i++;
+    }
+    return x;
+}

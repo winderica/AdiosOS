@@ -6,37 +6,7 @@
 #include <iostream>
 
 #include "monitor.h"
-
-vector<string> Monitor::split(const string &str, const string &delimiter) {
-    vector<string> tokens;
-    size_t prev = 0, pos;
-    do {
-        pos = str.find(delimiter, prev);
-        if (pos == string::npos) {
-            pos = str.length();
-        }
-        auto token = str.substr(prev, pos - prev);
-        if (!token.empty()) {
-            tokens.push_back(token);
-        }
-        prev = pos + delimiter.length();
-    } while (pos < str.length() && prev < str.length());
-    return tokens;
-}
-
-Monitor::ull Monitor::parseLine(const string &data) {
-    ull x = 0;
-    auto i = 0;
-    // fast read, not safe for general usage
-    while (data[i] < '0' || data[i] > '9') {
-        i++;
-    }
-    while (data[i] >= '0' && data[i] <= '9') {
-        x = (x << 3) + (x << 1) + (data[i] - '0');
-        i++;
-    }
-    return x;
-}
+#include "../utils/utils.h"
 
 void Monitor::readJiffies() {
     ifstream cpuUsage("/proc/stat");
@@ -51,13 +21,6 @@ void Monitor::readJiffies() {
         stoull(irq),
         stoull(softIrq),
     };
-}
-
-pair<double, double> Monitor::readUpTime() {
-    ifstream ifs("/proc/uptime");
-    string upTime, idleTime;
-    ifs >> upTime >> idleTime;
-    return {stod(upTime), stod(idleTime)};
 }
 
 string Monitor::getVersion() {
@@ -112,13 +75,13 @@ Monitor::MemoryInfo Monitor::getMemoryInfo() {
     ull freeSwap;
     while (getline(ifs, line)) {
         if (line.substr(0, 8) == "MemTotal") {
-            totalRAM = parseLine(line) * 1000;
+            totalRAM = Utils::parseLine(line) * 1000;
         } else if (line.substr(0, 7) == "MemFree") {
-            freeRAM = parseLine(line) * 1000;
+            freeRAM = Utils::parseLine(line) * 1000;
         } else if (line.substr(0, 9) == "SwapTotal") {
-            totalSwap = parseLine(line) * 1000;
+            totalSwap = Utils::parseLine(line) * 1000;
         } else if (line.substr(0, 8) == "SwapFree") {
-            freeSwap = parseLine(line) * 1000;
+            freeSwap = Utils::parseLine(line) * 1000;
         }
     }
     ull totalPhysical = totalRAM;
@@ -168,7 +131,7 @@ Monitor::Usage Monitor::getUsage() {
             ifstream command(path / "cmdline");
             string line;
             ProcessInfo process{};
-            auto fields = split(string(is_iter(stat), is_iter()), " ");
+            auto fields = Utils::split(string(is_iter(stat), is_iter()), " ");
             auto fieldsCount = 52;
             if (fields.size() != fieldsCount) {
                 continue;
@@ -181,27 +144,27 @@ Monitor::Usage Monitor::getUsage() {
             auto sTime = stod(fields[14]);
 //            auto cuTime = stod(fields[15]);
 //            auto csTime = stod(fields[16]);
-            auto totalTime = (uTime + sTime) / hz;
-            auto prevTime = usage.processes.count(process.pid) ? usage.processes[process.pid].time.count() : 0;
-            process.time = duration<double>(totalTime);
+            auto currProcessTime = (uTime + sTime) / hz;
+            auto prevProcessTime = usage.processes.count(process.pid) ? usage.processes[process.pid].time.count() : 0;
+            process.time = duration<double>(currProcessTime);
             process.priority = stoull(fields[17]);
             process.nice = stoull(fields[18]);
-            process.cpuUsage = (totalTime - prevTime) * hz * cpuCount / diffTotal;
+            process.cpuUsage = (currProcessTime - prevProcessTime) * hz * cpuCount / diffTotal;
             process.command = string(is_iter(command), is_iter());
             replace(process.command.begin(), process.command.end(), '\0', ' ');
             while (getline(status, line)) {
                 if (line.substr(0, 4) == "Name") {
                     process.name = line.substr(6); // magic number 6 is the start of name value
                 } else if (line.substr(0, 6) == "VmSize") {
-                    process.virtualMemory = parseLine(line) * 1000;
+                    process.virtualMemory = Utils::parseLine(line) * 1000;
                 } else if (line.substr(0, 5) == "VmRSS") {
-                    process.physicalMemory = parseLine(line) * 1000;
+                    process.physicalMemory = Utils::parseLine(line) * 1000;
                 } else if (line.substr(0, 3) == "Uid") {
-                    process.uid = parseLine(line);
+                    process.uid = Utils::parseLine(line);
                 } else if (line.substr(0, 7) == "RssFile") {
-                    process.sharedMemory = parseLine(line) * 1000;
+                    process.sharedMemory = Utils::parseLine(line) * 1000;
                 } else if (line.substr(0, 8) == "RssShmem") {
-                    process.sharedMemory += parseLine(line) * 1000;
+                    process.sharedMemory += Utils::parseLine(line) * 1000;
                 }
             }
             process.memoryUsage = (double) process.physicalMemory / getMemoryInfo().totalPhysical;
@@ -218,8 +181,11 @@ Monitor::Usage Monitor::getUsage() {
 
 Monitor::TimeInfo Monitor::getCPUTime() {
     using namespace chrono;
-    auto upTime = duration<double>(readUpTime().first);
-    auto idleTime = duration<double>(readUpTime().second / cpuInfo.processors);
+    ifstream ifs("/proc/uptime");
+    string first, second;
+    ifs >> first >> second;
+    auto upTime = duration<double>(stod(first));
+    auto idleTime = duration<double>(stod(second) / cpuInfo.processors);
     auto now = system_clock::now();
     auto bootTime = now - duration_cast<seconds>(upTime);
     return {
